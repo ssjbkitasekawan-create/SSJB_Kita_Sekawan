@@ -81,6 +81,7 @@ import RekapanAngsuranHarianScreen from './components/RekapanAngsuranHarianScree
 import OperasionalScreen from './components/OperasionalScreen';
 import AccountingScreen from './components/AccountingScreen';
 import { SSJBLogo } from './components/SSJBLogo';
+import WebLoginScreen from './components/WebLoginScreen';
 import { jsPDF } from 'jspdf';
 
 // Shadowing outer fetch to automatically append JWT Token based on activeRole
@@ -91,19 +92,35 @@ const fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const activeRole = (window as any).activeRole || 'petugas';
     const activeBranch = (window as any).activeBranch || 'PUSAT';
     
-    let userId = "USR-03"; // admin default
-    if (activeRole === 'petugas') userId = "USR-04"; // Rudi Hermawan
-    else if (activeRole === 'spv') userId = "USR-02"; // SPV
-    else if (activeRole === 'kasir') userId = "USR-13"; // Kasir
-    else if (activeRole === 'super_admin') userId = "SUPER_ADMIN"; // Super Admin
-
-    const stateUsers = (window as any).stateUsers;
-    if (stateUsers && Array.isArray(stateUsers)) {
-      const u = stateUsers.find((usr: any) => usr.role === activeRole);
-      if (u) userId = u.id;
+    // Attempt to load current logged-in user
+    let loggedUser: any = null;
+    const erpUserStr = localStorage.getItem('erp_user');
+    if (erpUserStr) {
+      try { loggedUser = JSON.parse(erpUserStr); } catch(e) {}
     }
 
-    const payload = { userId, role: activeRole, cabang_id: activeBranch };
+    let userId = "USR-03"; // admin default
+    let tokenRole = activeRole;
+
+    // RBAC logic: normal user is locked, super_admin is allowed to simulate inside testing workspace
+    if (loggedUser && loggedUser.role !== 'super_admin') {
+      userId = loggedUser.id;
+      tokenRole = loggedUser.role;
+    } else {
+      tokenRole = activeRole;
+      if (activeRole === 'petugas') userId = "USR-04"; // Rudi Hermawan
+      else if (activeRole === 'spv') userId = "USR-02"; // SPV
+      else if (activeRole === 'kasir') userId = "USR-13"; // Kasir
+      else if (activeRole === 'super_admin') userId = "SUPER_ADMIN"; // Super Admin
+
+      const stateUsers = (window as any).stateUsers;
+      if (stateUsers && Array.isArray(stateUsers)) {
+        const u = stateUsers.find((usr: any) => usr.role === activeRole);
+        if (u) userId = u.id;
+      }
+    }
+
+    const payload = { userId, role: tokenRole, cabang_id: activeBranch };
     const token = "sim-jwt." + btoa(JSON.stringify(payload));
 
     const headers = new Headers(newInit.headers || {});
@@ -157,6 +174,22 @@ const formatJam = (dateStr?: string) => {
 };
 
 export default function App() {
+  // Authentication & Session State for LOS & ERP
+  const [currentUser, setCurrentUser] = useState<any>(() => {
+    const savedUser = localStorage.getItem('erp_user');
+    if (savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        (window as any).activeRole = parsed.role;
+        (window as any).activeBranch = parsed.cabang_id || 'PUSAT';
+        return parsed;
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  });
+
   // Roles definition
   const roles = [
     { id: 'petugas', name: 'Petugas Lapangan', device: 'Mobile', desc: 'Akses Survei, Berkas Masuk, input Penagihan (Dukung Offline)' },
@@ -166,8 +199,27 @@ export default function App() {
     { id: 'super_admin', name: 'Super Admin', device: 'Web', desc: 'Manajemen Pengguna, Hak Akses, Matrix Penugasan Kelompok Harian' }
   ];
 
-  const [activeRole, setActiveRole] = useState<'petugas' | 'spv' | 'admin' | 'kasir' | 'super_admin'>('petugas');
-  const [activeBranch, setActiveBranch] = useState<'ALL' | 'PUSAT' | 'KC_MATIM'>('PUSAT');
+  const [activeRole, setActiveRole] = useState<'petugas' | 'spv' | 'admin' | 'kasir' | 'super_admin'>(() => {
+    const savedUser = localStorage.getItem('erp_user');
+    if (savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        return parsed.role;
+      } catch (e) {}
+    }
+    return 'petugas';
+  });
+
+  const [activeBranch, setActiveBranch] = useState<'ALL' | 'PUSAT' | 'KC_MATIM'>(() => {
+    const savedUser = localStorage.getItem('erp_user');
+    if (savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        return parsed.cabang_id || 'PUSAT';
+      } catch (e) {}
+    }
+    return 'PUSAT';
+  });
   const [state, setState] = useState<SystemState | null>(null);
   const [coa, setCoa] = useState<COA[]>([]);
   const [rawCustomers, setRawCustomers] = useState<Customer[]>([]);
@@ -1125,6 +1177,49 @@ export default function App() {
     setTimeout(() => setErrorString(null), 6000);
   };
 
+  // Handle successful login
+  const handleLoginSuccess = (user: any, token: string) => {
+    localStorage.setItem('erp_user', JSON.stringify(user));
+    localStorage.setItem('erp_token', token);
+    
+    // Set system React state
+    setCurrentUser(user);
+    setActiveRole(user.role);
+    setActiveBranch(user.cabang_id || 'PUSAT');
+
+    // Also update shadow window context
+    (window as any).activeRole = user.role;
+    (window as any).activeBranch = user.cabang_id || 'PUSAT';
+
+    // Route dynamically based on user role permissions
+    if (user.role === 'petugas') {
+      setActiveTab('berkas');
+    } else if (user.role === 'spv') {
+      setActiveTab('berkas');
+    } else if (user.role === 'admin') {
+      setActiveTab('accounting_buku_kas');
+    } else if (user.role === 'kasir') {
+      setActiveTab('setoran');
+    } else if (user.role === 'super_admin') {
+      setActiveTab('manajemen_pengguna');
+    }
+  };
+
+  // Handle logout
+  const handleLogout = () => {
+    localStorage.removeItem('erp_user');
+    localStorage.removeItem('erp_token');
+    
+    setCurrentUser(null);
+    setActiveRole('petugas'); // default
+    setActiveBranch('PUSAT');
+
+    (window as any).activeRole = 'petugas';
+    (window as any).activeBranch = 'PUSAT';
+    
+    triggerSuccess('Sesi masuk Anda telah dibersihkan. Silakan masuk kembali.');
+  };
+
   // Reset system db
   const resetDatabase = async () => {
     if (!confirm('Apakah Anda yakin ingin me-reset seluruh database ke setoran awal modal 75 juta rupiah?')) return;
@@ -1984,6 +2079,16 @@ export default function App() {
   const totalApprovedSurvey = state?.customers.filter(c => c.status === 'APPROVED_FOR_SURVEY').length || 0;
   const totalLayakCair = state?.customers.filter(c => c.status === 'LAYAK_CAIR').length || 0;
 
+  if (!currentUser) {
+    return (
+      <WebLoginScreen
+        onLoginSuccess={handleLoginSuccess}
+        triggerSuccess={triggerSuccess}
+        triggerError={triggerError}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F5F5F5] text-[#333333] font-sans flex flex-col selection:bg-blue-100 selection:text-blue-900" id="app_root">
       
@@ -2005,6 +2110,24 @@ export default function App() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3" id="database_controls">
+            {currentUser && (
+              <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded text-xs" id="user_profile_header">
+                <span className="font-semibold text-slate-400">Pegawai:</span>
+                <span className="font-bold text-slate-100 text-slate-200">{currentUser.nama}</span>
+                <span className="px-1.5 py-0.5 bg-[#3B82F6]/20 border border-[#3B82F6]/40 text-[#47A1FF] text-[8.5px] font-mono font-bold rounded uppercase tracking-wider">
+                  {currentUser.role}
+                </span>
+                <button
+                  type="button"
+                  id="header_logout_btn"
+                  onClick={handleLogout}
+                  className="ml-2 font-mono font-bold text-red-400 hover:text-red-300 transition uppercase tracking-wider text-[9px] cursor-pointer"
+                  title="Keluar dari sesi sistem"
+                >
+                  [Keluar]
+                </button>
+              </div>
+            )}
             {activeRole === 'super_admin' ? (
               <div className="flex items-center gap-2" id="branch_switcher_wrapper">
                 <span className="text-[10px] text-slate-300 font-bold uppercase font-mono tracking-wide">Workspace:</span>
@@ -2047,64 +2170,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Role Play Console (The Simulator Toolbar) */}
-      <section className="bg-slate-800 text-slate-200 py-3 px-6 shadow border-b border-slate-750" id="role_selector_bar">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 text-xs text-slate-400">
-            <div className="flex items-center gap-2">
-              <UserCheck size={16} className="text-emerald-400" />
-              <span>LOGGED USER SIMULATOR (RBAC ENFORCED):</span>
-            </div>
-            {activeRole !== 'super_admin' && (
-              <div className="flex items-center gap-1.5 bg-slate-900/60 px-2.5 py-1 rounded border border-slate-700 hover:border-slate-600 transition" id="simulator_branch_toggle">
-                <span>CABANG PETUGAS:</span>
-                <select
-                  id="simulator_branch_selector"
-                  value={activeBranch}
-                  onChange={(e) => setActiveBranch(e.target.value as any)}
-                  className="bg-transparent text-emerald-400 font-bold border-none focus:outline-none focus:ring-0 text-xs px-1 cursor-pointer"
-                >
-                  <option value="PUSAT" className="bg-slate-800 text-slate-200">🏢 PUSAT</option>
-                  <option value="KC_MATIM" className="bg-slate-800 text-slate-200">📍 KC MATIM</option>
-                </select>
-              </div>
-            )}
-          </div>
-          <div className="grid grid-cols-2 lg:flex lg:items-center gap-2" id="role_grid">
-            {roles.map(r => (
-              <button
-                key={r.id}
-                id={`role_btn_${r.id}`}
-                onClick={() => {
-                  setActiveRole(r.id as any);
-                  if (r.id === 'super_admin') {
-                    setActiveBranch('ALL');
-                  } else if (activeBranch === 'ALL') {
-                    setActiveBranch('PUSAT');
-                  }
-                  // Auto redirect appropriate tabs based on role permissions
-                  if (r.id === 'petugas') setActiveTab('berkas');
-                  if (r.id === 'spv') setActiveTab('berkas');
-                  if (r.id === 'admin') setActiveTab('laporan');
-                  if (r.id === 'kasir') setActiveTab('setoran');
-                  if (r.id === 'super_admin') setActiveTab('manajemen_pengguna');
-                }}
-                className={`px-3 py-2 rounded text-xs font-medium text-left transition flex items-center gap-2 border ${
-                  activeRole === r.id
-                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow'
-                    : 'bg-slate-900/60 hover:bg-slate-900 text-slate-300 border-transparent hover:border-slate-700'
-                }`}
-              >
-                {r.device === 'Mobile' ? <Smartphone size={14} /> : <Monitor size={14} />}
-                <div>
-                  <div className="font-bold leading-none">{r.name}</div>
-                  <span className="text-[10px] opacity-75">{r.device} Access</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* Logged User Simulator Topbar is hidden as requested */}
 
       {/* Main Alert Banner space */}
       <div className="max-w-7xl mx-auto w-full px-4 pt-4 shrink-0" id="alerts_canvas">
@@ -2194,121 +2260,131 @@ export default function App() {
             <nav className="flex flex-col p-2 gap-1.5" id="nav_scroller">
               
               {/* SECTION: ALUR PROSES KREDIT (LOS) */}
-              <div className="px-3 py-1.5 bg-slate-50/80 rounded border-y border-slate-150 my-1 text-[10px] font-bold text-slate-500 tracking-wider font-display uppercase">
-                ALUR PROSES KREDIT (LOS)
-              </div>
+              {activeRole !== 'kasir' && (
+                <div className="px-3 py-1.5 bg-slate-50/80 rounded border-y border-slate-150 my-1 text-[10px] font-bold text-slate-500 tracking-wider font-display uppercase">
+                  ALUR PROSES KREDIT (LOS)
+                </div>
+              )}
 
               {/* Menu 1: DATABASE AWAL */}
-              <button
-                id="tab_btn_database_awal"
-                onClick={() => {
-                  if (activeRole !== 'admin' && activeRole !== 'super_admin') {
-                    triggerError('Akses Menu DATABASE AWAL dibatasi khusus Administrator.');
-                    return;
-                  }
-                  setActiveTab('database_awal');
-                }}
-                className={`px-3 py-2 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
-                  activeRole !== 'admin' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
-                } ${
-                  activeTab === 'database_awal' 
-                    ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
-                    : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <Database size={15} className={activeTab === 'database_awal' ? 'text-[#0066CC]' : 'text-slate-400'} />
-                  <span>1. DATABASE AWAL</span>
-                </span>
-                <span className="px-1 py-0.5 bg-slate-100 text-slate-600 text-[8px] font-mono font-bold rounded border border-slate-200">ADM</span>
-              </button>
+              {(activeRole === 'admin' || activeRole === 'super_admin') && (
+                <button
+                  id="tab_btn_database_awal"
+                  onClick={() => {
+                    if (activeRole !== 'admin' && activeRole !== 'super_admin') {
+                      triggerError('Akses Menu DATABASE AWAL dibatasi khusus Administrator.');
+                      return;
+                    }
+                    setActiveTab('database_awal');
+                  }}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
+                    activeRole !== 'admin' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
+                  } ${
+                    activeTab === 'database_awal' 
+                      ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
+                      : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Database size={15} className={activeTab === 'database_awal' ? 'text-[#0066CC]' : 'text-slate-400'} />
+                    <span>1. DATABASE AWAL</span>
+                  </span>
+                  <span className="px-1 py-0.5 bg-slate-100 text-slate-600 text-[8px] font-mono font-bold rounded border border-slate-200">ADM</span>
+                </button>
+              )}
 
               {/* Menu 2: BERKAS MASUK */}
-              <button
-                id="tab_btn_berkas"
-                onClick={() => {
-                  if (activeRole !== 'petugas' && activeRole !== 'spv' && activeRole !== 'admin' && activeRole !== 'super_admin') {
-                    triggerError('Akses Menu BERKAS MASUK khusus untuk Petugas, SPV, dan Admin.');
-                    return;
-                  }
-                  setActiveTab('berkas');
-                }}
-                className={`px-3 py-2 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
-                  activeRole !== 'petugas' && activeRole !== 'spv' && activeRole !== 'admin' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
-                } ${
-                  activeTab === 'berkas' 
-                    ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
-                    : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <FolderOpen size={15} className={activeTab === 'berkas' ? 'text-[#0066CC]' : 'text-slate-400'} />
-                  <span>2. BERKAS MASUK</span>
-                </span>
-                {totalRawPendingSPV > 0 && (
-                  <span className="px-1.5 py-0.5 bg-red-500 text-white text-[9px] font-mono font-bold rounded-full">
-                    {totalRawPendingSPV}
+              {(activeRole === 'petugas' || activeRole === 'spv' || activeRole === 'admin' || activeRole === 'super_admin') && (
+                <button
+                  id="tab_btn_berkas"
+                  onClick={() => {
+                    if (activeRole !== 'petugas' && activeRole !== 'spv' && activeRole !== 'admin' && activeRole !== 'super_admin') {
+                      triggerError('Akses Menu BERKAS MASUK khusus untuk Petugas, SPV, dan Admin.');
+                      return;
+                    }
+                    setActiveTab('berkas');
+                  }}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
+                    activeRole !== 'petugas' && activeRole !== 'spv' && activeRole !== 'admin' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
+                  } ${
+                    activeTab === 'berkas' 
+                      ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
+                      : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <FolderOpen size={15} className={activeTab === 'berkas' ? 'text-[#0066CC]' : 'text-slate-400'} />
+                    <span>2. BERKAS MASUK</span>
                   </span>
-                )}
-              </button>
+                  {totalRawPendingSPV > 0 && (
+                    <span className="px-1.5 py-0.5 bg-red-500 text-white text-[9px] font-mono font-bold rounded-full">
+                      {totalRawPendingSPV}
+                    </span>
+                  )}
+                </button>
+              )}
 
               {/* Menu 3: SURVEI */}
-              <button
-                id="tab_btn_survei"
-                onClick={() => {
-                  if (activeRole !== 'petugas' && activeRole !== 'super_admin') {
-                    triggerError('Akses Menu SURVEI dibatasi khusus Petugas Lapangan.');
-                    return;
-                  }
-                  setActiveTab('survei');
-                }}
-                className={`px-3 py-2 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
-                  activeRole !== 'petugas' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
-                } ${
-                  activeTab === 'survei' 
-                    ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
-                    : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <ClipboardCheck size={15} className={activeTab === 'survei' ? 'text-[#0066CC]' : 'text-slate-400'} />
-                  <span>3. SURVEI</span>
-                </span>
-                {totalApprovedSurvey > 0 && (
-                  <span className="px-1.5 py-0.5 bg-amber-500 text-slate-950 text-[9px] font-mono font-bold rounded-full">
-                    {totalApprovedSurvey}
+              {(activeRole === 'petugas' || activeRole === 'super_admin') && (
+                <button
+                  id="tab_btn_survei"
+                  onClick={() => {
+                    if (activeRole !== 'petugas' && activeRole !== 'super_admin') {
+                      triggerError('Akses Menu SURVEI dibatasi khusus Petugas Lapangan.');
+                      return;
+                    }
+                    setActiveTab('survei');
+                  }}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
+                    activeRole !== 'petugas' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
+                  } ${
+                    activeTab === 'survei' 
+                      ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
+                      : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <ClipboardCheck size={15} className={activeTab === 'survei' ? 'text-[#0066CC]' : 'text-slate-400'} />
+                    <span>3. SURVEI</span>
                   </span>
-                )}
-              </button>
+                  {totalApprovedSurvey > 0 && (
+                    <span className="px-1.5 py-0.5 bg-amber-500 text-slate-950 text-[9px] font-mono font-bold rounded-full">
+                      {totalApprovedSurvey}
+                    </span>
+                  )}
+                </button>
+              )}
 
               {/* Menu 4: PENCAIRAN KOLEKTIF */}
-              <button
-                id="tab_btn_pencairan"
-                onClick={() => {
-                  if (activeRole !== 'admin' && activeRole !== 'spv' && activeRole !== 'super_admin') {
-                    triggerError('Akses Menu PENCAIRAN khusus untuk Administrator dan SPV.');
-                    return;
-                  }
-                  setActiveTab('pencairan');
-                }}
-                className={`px-3 py-2 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
-                  activeRole !== 'admin' && activeRole !== 'spv' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
-                } ${
-                  activeTab === 'pencairan' 
-                    ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
-                    : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <Coins size={15} className={activeTab === 'pencairan' ? 'text-[#0066CC]' : 'text-slate-400'} />
-                  <span>4. PENCAIRAN KOLEKTIF</span>
-                </span>
-                {totalLayakCair > 0 && (
-                  <span className="px-1.5 py-0.5 bg-emerald-500 text-white text-[9px] font-mono font-bold rounded-full animate-bounce">
-                    {totalLayakCair}
+              {(activeRole === 'admin' || activeRole === 'spv' || activeRole === 'super_admin') && (
+                <button
+                  id="tab_btn_pencairan"
+                  onClick={() => {
+                    if (activeRole !== 'admin' && activeRole !== 'spv' && activeRole !== 'super_admin') {
+                      triggerError('Akses Menu PENCAIRAN khusus untuk Administrator dan SPV.');
+                      return;
+                    }
+                    setActiveTab('pencairan');
+                  }}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
+                    activeRole !== 'admin' && activeRole !== 'spv' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
+                  } ${
+                    activeTab === 'pencairan' 
+                      ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
+                      : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Coins size={15} className={activeTab === 'pencairan' ? 'text-[#0066CC]' : 'text-slate-400'} />
+                    <span>4. PENCAIRAN KOLEKTIF</span>
                   </span>
-                )}
-              </button>
+                  {totalLayakCair > 0 && (
+                    <span className="px-1.5 py-0.5 bg-emerald-500 text-white text-[9px] font-mono font-bold rounded-full animate-bounce">
+                      {totalLayakCair}
+                    </span>
+                  )}
+                </button>
+              )}
 
               {/* Menu 4B: INFO PENCAIRAN (READ-ONLY) */}
               {(activeRole === 'petugas' || activeRole === 'super_admin') && (
@@ -2395,161 +2471,177 @@ export default function App() {
               ))}
 
               {/* Menu 5: DATABASE AKTIF */}
-              <button
-                id="tab_btn_database_aktif"
-                onClick={() => {
-                  if (activeRole !== 'admin' && activeRole !== 'spv' && activeRole !== 'super_admin') {
-                    triggerError('Akses Menu DATABASE AKTIF dibatasi khusus Admin dan SPV.');
-                    return;
-                  }
-                  setActiveTab('database_aktif');
-                }}
-                className={`px-3 py-2 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
-                  activeRole !== 'admin' && activeRole !== 'spv' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
-                } ${
-                  activeTab === 'database_aktif' 
-                    ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
-                    : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <Layers size={15} className={activeTab === 'database_aktif' ? 'text-[#0066CC]' : 'text-slate-400'} />
-                  <span>5. DATABASE AKTIF</span>
-                </span>
-                <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 text-[8px] font-mono font-bold rounded border border-emerald-150">LIVE</span>
-              </button>
+              {(activeRole === 'admin' || activeRole === 'spv' || activeRole === 'super_admin') && (
+                <button
+                  id="tab_btn_database_aktif"
+                  onClick={() => {
+                    if (activeRole !== 'admin' && activeRole !== 'spv' && activeRole !== 'super_admin') {
+                      triggerError('Akses Menu DATABASE AKTIF dibatasi khusus Admin dan SPV.');
+                      return;
+                    }
+                    setActiveTab('database_aktif');
+                  }}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
+                    activeRole !== 'admin' && activeRole !== 'spv' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
+                  } ${
+                    activeTab === 'database_aktif' 
+                      ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
+                      : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Layers size={15} className={activeTab === 'database_aktif' ? 'text-[#0066CC]' : 'text-slate-400'} />
+                    <span>5. DATABASE AKTIF</span>
+                  </span>
+                  <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 text-[8px] font-mono font-bold rounded border border-emerald-150">LIVE</span>
+                </button>
+              )}
 
               {/* MODUL 11: ONBOARDING DATA LEGACY */}
-              <button
-                id="tab_btn_onboarding_legacy"
-                onClick={() => setActiveTab('onboarding_legacy')}
-                className={`px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between border ${
-                  activeTab === 'onboarding_legacy' 
-                    ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
-                    : 'border-slate-100 text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <FileSpreadsheet size={15} className={activeTab === 'onboarding_legacy' ? 'text-[#0066CC]' : 'text-slate-400'} />
-                  <span>Onboarding Legacy Excel</span>
-                </span>
-                <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 text-[8px] font-mono rounded font-bold border border-indigo-200">
-                  BULK CSV
-                </span>
-              </button>
+              {(activeRole === 'admin' || activeRole === 'super_admin') && (
+                <button
+                  id="tab_btn_onboarding_legacy"
+                  onClick={() => setActiveTab('onboarding_legacy')}
+                  className={`px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between border ${
+                    activeTab === 'onboarding_legacy' 
+                      ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
+                      : 'border-slate-100 text-slate-605 hover:bg-blue-50/80 hover:text-[#0066CC]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <FileSpreadsheet size={15} className={activeTab === 'onboarding_legacy' ? 'text-[#0066CC]' : 'text-slate-400'} />
+                    <span>Onboarding Legacy Excel</span>
+                  </span>
+                  <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 text-[8px] font-mono rounded font-bold border border-indigo-200">
+                    BULK CSV
+                  </span>
+                </button>
+              )}
 
 
               {/* ==================== [GROUP 1] PENGELOLAAN TAGIHAN ==================== */}
-              <div className="px-3 py-1.5 bg-[#0066CC]/5 rounded-lg my-1 text-[10px] font-bold text-[#0066CC] tracking-wider font-display uppercase border-l-2 border-[#00C853]">
-                PENGELOLAAN TAGIHAN
-              </div>
+              {(activeRole === 'admin' || activeRole === 'super_admin') && (
+                <div className="px-3 py-1.5 bg-[#0066CC]/5 rounded-lg my-1 text-[10px] font-bold text-[#0066CC] tracking-wider font-display uppercase border-l-2 border-[#00C853]">
+                  PENGELOLAAN TAGIHAN
+                </div>
+              )}
 
               {/* Peta Wilayah Operasional */}
-              <button
-                id="tab_btn_manajemen_penagihan"
-                onClick={() => {
-                  if (activeRole !== 'admin' && activeRole !== 'super_admin') {
-                    triggerError('Akses Peta Wilayah Operasional dibatasi khusus Administrator.');
-                    return;
-                  }
-                  setActiveTab('manajemen_penagihan');
-                }}
-                className={`px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
-                  activeRole !== 'admin' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
-                } ${
-                  activeTab === 'manajemen_penagihan' 
-                    ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
-                    : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <MapPin size={15} className={activeTab === 'manajemen_penagihan' ? 'text-[#0066CC]' : 'text-slate-450'} />
-                  <span>Peta Wilayah Operasional</span>
-                </span>
-                <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-200 text-[8px] font-mono font-bold rounded">ADM</span>
-              </button>
+              {(activeRole === 'admin' || activeRole === 'super_admin') && (
+                <button
+                  id="tab_btn_manajemen_penagihan"
+                  onClick={() => {
+                    if (activeRole !== 'admin' && activeRole !== 'super_admin') {
+                      triggerError('Akses Peta Wilayah Operasional dibatasi khusus Administrator.');
+                      return;
+                    }
+                    setActiveTab('manajemen_penagihan');
+                  }}
+                  className={`px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
+                    activeRole !== 'admin' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
+                  } ${
+                    activeTab === 'manajemen_penagihan' 
+                      ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
+                      : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <MapPin size={15} className={activeTab === 'manajemen_penagihan' ? 'text-[#0066CC]' : 'text-slate-450'} />
+                    <span>Peta Wilayah Operasional</span>
+                  </span>
+                  <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-200 text-[8px] font-mono font-bold rounded">ADM</span>
+                </button>
+              )}
 
               {/* Manajemen Pengguna & Hak Access */}
-              <button
-                id="tab_btn_manajemen_pengguna"
-                onClick={() => {
-                  if (activeRole !== 'super_admin') {
-                    triggerError('Akses Menu MANAJEMEN PENGGUNA & HAK AKSES dibatasi khusus Super Admin.');
-                    return;
-                  }
-                  setActiveTab('manajemen_pengguna');
-                }}
-                className={`px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
-                  activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
-                } ${
-                  activeTab === 'manajemen_pengguna' 
-                    ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
-                    : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <div className="flex items-center gap-0.5">
-                    <Users size={15} className={activeTab === 'manajemen_pengguna' ? 'text-[#0066CC]' : 'text-purple-600'} />
-                    <Settings size={10} className="text-slate-400 -ml-1 text-[8px]" />
-                  </div>
-                  <span>Manajemen Pengguna & Hak Akses</span>
-                </span>
-                <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 font-bold text-[8px] font-mono rounded border border-purple-200">SUPER</span>
-              </button>
+              {activeRole === 'super_admin' && (
+                <button
+                  id="tab_btn_manajemen_pengguna"
+                  onClick={() => {
+                    if (activeRole !== 'super_admin') {
+                      triggerError('Akses Menu MANAJEMEN PENGGUNA & HAK AKSES dibatasi khusus Super Admin.');
+                      return;
+                    }
+                    setActiveTab('manajemen_pengguna');
+                  }}
+                  className={`px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
+                    activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
+                  } ${
+                    activeTab === 'manajemen_pengguna' 
+                      ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
+                      : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <div className="flex items-center gap-0.5">
+                      <Users size={15} className={activeTab === 'manajemen_pengguna' ? 'text-[#0066CC]' : 'text-purple-600'} />
+                      <Settings size={10} className="text-slate-400 -ml-1 text-[8px]" />
+                    </div>
+                    <span>Manajemen Pengguna & Hak Akses</span>
+                  </span>
+                  <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 font-bold text-[8px] font-mono rounded border border-purple-200">SUPER</span>
+                </button>
+              )}
 
 
               {/* ==================== [GROUP 2] PETUGAS LAPANGAN DAN KASIR ==================== */}
-              <div className="px-3 py-1.5 bg-[#0066CC]/5 rounded-lg my-1 text-[10px] font-bold text-[#0066CC] tracking-wider font-display uppercase border-l-2 border-[#00C853]">
-                PETUGAS LAPANGAN DAN KASIR
-              </div>
+              {activeRole !== 'spv' && (
+                <div className="px-3 py-1.5 bg-[#0066CC]/5 rounded-lg my-1 text-[10px] font-bold text-[#0066CC] tracking-wider font-display uppercase border-l-2 border-[#00C853]">
+                  PETUGAS LAPANGAN DAN KASIR
+                </div>
+              )}
 
               {/* Penagihan Lapangan */}
-              <button
-                id="tab_btn_penagihan"
-                onClick={() => {
-                  if (activeRole !== 'petugas' && activeRole !== 'super_admin') {
-                    triggerError('Modul Penagihan Lapangan khusus Petugas Mobile.');
-                    return;
-                  }
-                  setActiveTab('penagihan');
-                }}
-                className={`px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
-                  activeRole !== 'petugas' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
-                } ${
-                  activeTab === 'penagihan' 
-                    ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
-                    : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <Smartphone size={15} className={activeTab === 'penagihan' ? 'text-[#0066CC]' : 'text-slate-400'} />
-                  <span>Penagihan Lapangan</span>
-                </span>
-              </button>
+              {(activeRole === 'petugas' || activeRole === 'super_admin') && (
+                <button
+                  id="tab_btn_penagihan"
+                  onClick={() => {
+                    if (activeRole !== 'petugas' && activeRole !== 'super_admin') {
+                      triggerError('Modul Penagihan Lapangan khusus Petugas Mobile.');
+                      return;
+                    }
+                    setActiveTab('penagihan');
+                  }}
+                  className={`px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
+                    activeRole !== 'petugas' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
+                  } ${
+                    activeTab === 'penagihan' 
+                      ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
+                      : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Smartphone size={15} className={activeTab === 'penagihan' ? 'text-[#0066CC]' : 'text-slate-400'} />
+                    <span>Penagihan Lapangan</span>
+                  </span>
+                </button>
+              )}
 
               {/* Setoran Harian Kasir */}
-              <button
-                id="tab_btn_setoran"
-                onClick={() => {
-                  if (activeRole !== 'kasir' && activeRole !== 'super_admin') {
-                    triggerError('Modul Setoran Harian khusus diselesaikan oleh Kasir.');
-                    return;
-                  }
-                  setActiveTab('setoran');
-                }}
-                className={`px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
-                  activeRole !== 'kasir' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
-                } ${
-                  activeTab === 'setoran' 
-                    ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
-                    : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <Calculator size={15} className={activeTab === 'setoran' ? 'text-[#0066CC]' : 'text-slate-400'} />
-                  <span>Setoran Harian Kasir</span>
-                </span>
-              </button>
+              {(activeRole === 'kasir' || activeRole === 'super_admin') && (
+                <button
+                  id="tab_btn_setoran"
+                  onClick={() => {
+                    if (activeRole !== 'kasir' && activeRole !== 'super_admin') {
+                      triggerError('Modul Setoran Harian khusus diselesaikan oleh Kasir.');
+                      return;
+                    }
+                    setActiveTab('setoran');
+                  }}
+                  className={`px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between ${
+                    activeRole !== 'kasir' && activeRole !== 'super_admin' ? 'opacity-40 cursor-not-allowed' : ''
+                  } ${
+                    activeTab === 'setoran' 
+                      ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white font-bold shadow-sm' 
+                      : 'text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Calculator size={15} className={activeTab === 'setoran' ? 'text-[#0066CC]' : 'text-slate-400'} />
+                    <span>Setoran Harian Kasir</span>
+                  </span>
+                </button>
+              )}
 
               {/* Rekapan Penerimaan Kas */}
               {(activeRole === 'kasir' || activeRole === 'admin' || activeRole === 'super_admin') && (
@@ -2565,7 +2657,7 @@ export default function App() {
                   }`}
                 >
                   <span className="flex items-center gap-2">
-                    <FileSpreadsheet size={15} className={activeTab === 'penerimaan_kas' ? 'text-[#0066CC]' : 'text-slate-400'} />
+                    <FileSpreadsheet size={15} className={activeTab === 'penerimaan_kas' ? 'text-[#0066CC]' : 'text-slate-450'} />
                     <span>Rekapan Penerimaan Kas</span>
                   </span>
                   <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-750 font-bold border border-emerald-150 text-[8px] font-mono rounded">KASIR</span>
@@ -2573,48 +2665,54 @@ export default function App() {
               )}
 
               {/* Keamanan & Auth Mobile */}
-              <button
-                id="tab_btn_auth_simulator"
-                onClick={() => setActiveTab('auth_simulator')}
-                className={`px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between border ${
-                  activeTab === 'auth_simulator' 
-                    ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white shadow-sm font-bold' 
-                    : 'border-slate-100 text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <Shield size={15} className={activeTab === 'auth_simulator' ? 'text-[#0066CC]' : 'text-slate-400'} />
-                  <span>Keamanan & Auth Mobile</span>
-                </span>
-                <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 font-bold border border-blue-150 text-[8px] font-mono rounded">
-                  SYNC
-                </span>
-              </button>
+              {(activeRole === 'petugas' || activeRole === 'super_admin') && (
+                <button
+                  id="tab_btn_auth_simulator"
+                  onClick={() => setActiveTab('auth_simulator')}
+                  className={`px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between border ${
+                    activeTab === 'auth_simulator' 
+                      ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white shadow-sm font-bold' 
+                      : 'border-slate-100 text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Shield size={15} className={activeTab === 'auth_simulator' ? 'text-[#0066CC]' : 'text-slate-400'} />
+                    <span>Keamanan & Auth Mobile</span>
+                  </span>
+                  <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 font-bold border border-blue-150 text-[8px] font-mono rounded">
+                    SYNC
+                  </span>
+                </button>
+              )}
 
               {/* Pelunasan Talangan (TR) */}
-              <button
-                id="tab_btn_tanggung_renteng"
-                onClick={() => setActiveTab('tanggung_renteng')}
-                className={`px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between border ${
-                  activeTab === 'tanggung_renteng' 
-                    ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white shadow-sm font-bold' 
-                    : 'border-slate-100 text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <HandCoins size={15} className={activeTab === 'tanggung_renteng' ? 'text-[#0066CC]' : 'text-slate-400'} />
-                  <span>Pelunasan Talangan (TR)</span>
-                </span>
-                <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 font-bold border border-amber-150 text-[8px] font-mono rounded">
-                  MOBILE TR
-                </span>
-              </button>
+              {(activeRole === 'petugas' || activeRole === 'super_admin') && (
+                <button
+                  id="tab_btn_tanggung_renteng"
+                  onClick={() => setActiveTab('tanggung_renteng')}
+                  className={`px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition flex items-center justify-between border ${
+                    activeTab === 'tanggung_renteng' 
+                      ? 'bg-[#0066CC] border-l-4 border-[#00C853] text-white shadow-sm font-bold' 
+                      : 'border-slate-100 text-slate-600 hover:bg-blue-50/80 hover:text-[#0066CC]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <HandCoins size={15} className={activeTab === 'tanggung_renteng' ? 'text-[#0066CC]' : 'text-slate-400'} />
+                    <span>Pelunasan Talangan (TR)</span>
+                  </span>
+                  <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 font-bold border border-amber-150 text-[8px] font-mono rounded">
+                    MOBILE TR
+                  </span>
+                </button>
+              )}
 
 
               {/* ==================== [GROUP 3] AKUNTANSI & KEUANGAN ==================== */}
-              <div className="px-3 py-1.5 bg-[#0066CC]/5 rounded-lg my-1 text-[10px] font-bold text-[#0066CC] tracking-wider font-display uppercase border-l-2 border-[#00C853]">
-                AKUNTANSI & KEUANGAN
-              </div>
+              {(activeRole === 'kasir' || activeRole === 'admin' || activeRole === 'super_admin') && (
+                <div className="px-3 py-1.5 bg-[#0066CC]/5 rounded-lg my-1 text-[10px] font-bold text-[#0066CC] tracking-wider font-display uppercase border-l-2 border-[#00C853]">
+                  AKUNTANSI & KEUANGAN
+                </div>
+              )}
 
               {(activeRole === 'kasir' || activeRole === 'admin' || activeRole === 'super_admin') && (
                 <>

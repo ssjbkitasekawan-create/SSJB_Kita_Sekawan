@@ -219,6 +219,10 @@ export interface User {
   device_id: string | null; // binds physical device ID representing Expo/Mobile uuid
   status_aktif?: 'AKTIF' | 'NON_AKTIF'; // "super_admin" can manage active status
   kantor_cabang?: 'PUSAT' | 'KC_MATIM';
+  cabang_id?: string;
+  cabang_id_local?: string;
+  employee_id?: string;
+  email?: string;
 }
 
 export interface JointLiability {

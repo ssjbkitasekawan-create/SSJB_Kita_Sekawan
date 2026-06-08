@@ -403,6 +403,47 @@ function getInitialState(): SystemState {
         password_hash: hashSHA256("admin123"),
         offline_pin_hash: hashSHA256("000000"),
         device_id: null
+      },
+      {
+        id: "USR-13",
+        nik: "kasir123",
+        nama: "Cathy Amelia (Kasir)",
+        role: "kasir",
+        password_hash: hashSHA256("kasir123"),
+        offline_pin_hash: hashSHA256("147258"),
+        device_id: null
+      },
+      {
+        id: "USR-14",
+        nik: "spv123",
+        nama: "Siti Aminah (SPV)",
+        role: "spv",
+        password_hash: hashSHA256("spv123"),
+        offline_pin_hash: hashSHA256("258369"),
+        device_id: null
+      },
+      {
+        id: "USR-15",
+        nik: "super123",
+        nama: "Sekawan Super Admin",
+        role: "super_admin",
+        password_hash: hashSHA256("super123"),
+        offline_pin_hash: hashSHA256("369147"),
+        device_id: null
+      },
+      {
+        id: "USR-OWNER",
+        nik: "ptsekawansejahterabersama@gmail.com",
+        nama: "Sekawan Owner (ptsekawansejahterabersama@gmail.com)",
+        role: "super_admin",
+        password_hash: hashSHA256("sekawan123"),
+        offline_pin_hash: hashSHA256("147258"),
+        device_id: null,
+        email: "ptsekawansejahterabersama@gmail.com",
+        employee_id: "EMP-0001",
+        status_aktif: "AKTIF" as const,
+        kantor_cabang: "PUSAT" as const,
+        cabang_id: "PUSAT"
       }
     ],
     opexExpenses: [],
@@ -450,6 +491,15 @@ function readDB(): SystemState {
     const data = fs.readFileSync(DB_FILE, "utf-8");
     const parsed = JSON.parse(data);
     const initial = getInitialState();
+
+    const usersList = parsed.users || initial.users;
+    initial.users.forEach((u: any) => {
+      const idx = usersList.findIndex((eu: any) => eu.id === u.id || (eu.nik && eu.nik.toLowerCase() === u.nik.toLowerCase()));
+      if (idx === -1) {
+        usersList.push(u);
+      }
+    });
+
     const merged = {
       ...initial,
       ...parsed,
@@ -467,7 +517,7 @@ function readDB(): SystemState {
       journalEntryLines: parsed.journalEntryLines || initial.journalEntryLines,
       jointLiabilities: parsed.jointLiabilities || initial.jointLiabilities,
       liabilityPaymentHistories: parsed.liabilityPaymentHistories || initial.liabilityPaymentHistories,
-      users: parsed.users || initial.users,
+      users: usersList,
       rawCustomers: parsed.rawCustomers || initial.rawCustomers || [],
       disbursements: parsed.disbursements || initial.disbursements || [],
       opexExpenses: parsed.opexExpenses || initial.opexExpenses || [],
@@ -475,10 +525,8 @@ function readDB(): SystemState {
       liabilitiesCapitalLogs: parsed.liabilitiesCapitalLogs || initial.liabilitiesCapitalLogs || [],
       bankMutations: parsed.bankMutations || initial.bankMutations || [],
     };
-    // If any keys were missing, save them back to DB_FILE so the file remains intact
-    if (!parsed.users || !parsed.jointLiabilities || !parsed.liabilityPaymentHistories || !parsed.regions || !parsed.rawCustomers || !parsed.disbursements || !parsed.opexExpenses || !parsed.fixedAssets || !parsed.liabilitiesCapitalLogs || !parsed.bankMutations) {
-      fs.writeFileSync(DB_FILE, JSON.stringify(merged, null, 2));
-    }
+    // Save synchronized database back if needed
+    fs.writeFileSync(DB_FILE, JSON.stringify(merged, null, 2));
     return merged;
   } catch (err) {
     console.error("Failed to read database file, resetting State", err);
@@ -1446,15 +1494,15 @@ async function startServer() {
     const db = readDB();
     if (!db.users) db.users = [];
 
-    const { nama, username, password, role, status_aktif, kantor_cabang } = req.body;
+    const { nama, username, password, role, status_aktif, kantor_cabang, employee_id, email } = req.body;
     if (!nama || !username || !role) {
-      return res.status(400).json({ error: "Missing required fields (Nama, Username, Role)." });
+      return res.status(400).json({ error: "Kolom Nama, Username/NIK, dan Role wajib diisi." });
     }
 
     // Duplicate check
-    const duplicate = db.users.find((u: any) => u.nik.toLowerCase() === username.toLowerCase());
+    const duplicate = db.users.find((u: any) => u.nik.toLowerCase() === username.toLowerCase() || (email && u.email && u.email.toLowerCase() === email.toLowerCase()));
     if (duplicate) {
-      return res.status(400).json({ error: "User with this username (NIK) already exists." });
+      return res.status(400).json({ error: "User dengan NIK/Username atau Email ini sudah terdaftar." });
     }
 
     const newUserId = `USR-${Date.now()}`;
@@ -1471,7 +1519,9 @@ async function startServer() {
       device_id: null,
       status_aktif: status_aktif || "AKTIF",
       kantor_cabang: assignedCabang === "ALL" ? "PUSAT" : assignedCabang,
-      cabang_id: assignedCabang === "ALL" ? "PUSAT" : assignedCabang
+      cabang_id: assignedCabang === "ALL" ? "PUSAT" : assignedCabang,
+      employee_id: employee_id || `EMP-${Date.now().toString().slice(-4)}`,
+      email: email || ""
     };
 
     db.users.push(newUser);
@@ -3669,8 +3719,8 @@ async function startServer() {
   // API Mobile Auth: Login with Device Binding Check
   app.post("/api/auth/login", (req, res) => {
     const { nik, password, deviceId } = req.body;
-    if (!nik || !password || !deviceId) {
-      return res.status(400).json({ error: "NIK, Password, dan Device ID wajib diisi." });
+    if (!nik || !password) {
+      return res.status(400).json({ error: "NIK dan Password wajib diisi." });
     }
 
     const db = readDB();
@@ -3680,9 +3730,13 @@ async function startServer() {
       writeDB(db);
     }
 
-    const user = db.users.find(u => u.nik === nik);
+    const user = db.users.find(u => 
+      u.nik === nik || 
+      (u.nik && u.nik.toLowerCase() === nik.toLowerCase()) || 
+      (u.email && u.email.toLowerCase() === nik.toLowerCase())
+    );
     if (!user) {
-      return res.status(404).json({ error: "User dengan NIK tersebut tidak ditemukan." });
+      return res.status(404).json({ error: "User dengan NIK atau Email tersebut tidak ditemukan." });
     }
 
     // Verify password hash
@@ -3691,12 +3745,14 @@ async function startServer() {
       return res.status(401).json({ error: "Password yang Anda masukkan salah." });
     }
 
-    // Device Binding Check
-    if (!user.device_id) {
-      user.device_id = deviceId;
-      writeDB(db);
-    } else if (user.device_id !== deviceId) {
-      return res.status(400).json({ error: "Akun ini telah terikat pada perangkat lain" });
+    // Device Binding Check - Only enforced for 'petugas' role if deviceId is supplied or requested
+    if (user.role === 'petugas' && deviceId) {
+      if (!user.device_id) {
+        user.device_id = deviceId;
+        writeDB(db);
+      } else if (user.device_id !== deviceId) {
+        return res.status(400).json({ error: "Akun ini telah terikat pada perangkat lain" });
+      }
     }
 
     // Generate simulated JWT access token
@@ -3704,7 +3760,8 @@ async function startServer() {
       userId: user.id,
       nik: user.nik,
       role: user.role,
-      device_id: user.device_id,
+      cabang_id: user.cabang_id || "PUSAT",
+      device_id: user.device_id || null,
       exp: Date.now() + 24 * 60 * 60 * 1000
     };
     const token = "sim-jwt." + Buffer.from(JSON.stringify(tokenPayload)).toString("base64");
@@ -3716,9 +3773,68 @@ async function startServer() {
         nik: user.nik,
         nama: user.nama,
         role: user.role,
-        device_id: user.device_id
+        cabang_id: user.cabang_id || "PUSAT",
+        device_id: user.device_id || null,
+        email: user.email || "",
+        employee_id: user.employee_id || ""
       },
       pin_hash: user.offline_pin_hash
+    });
+  });
+
+  // API Mobile & Web Auth: Self-Registration for Karyawan Sekawan
+  app.post("/api/auth/register", (req, res) => {
+    const { nama, email, nik, employee_id, role, password } = req.body;
+    if (!nama || !email || !nik || !employee_id || !role || !password) {
+      return res.status(400).json({ error: "Semua kolom form pendaftaran wajib diisi (Nama, Email, NIK, ID Karyawan, Jabatan, Password)." });
+    }
+
+    const db = readDB();
+    if (!db.users) db.users = [];
+
+    // Check duplicates on nik or email
+    const duplicate = db.users.find((u: any) => 
+      u.nik.toLowerCase() === nik.toLowerCase() || 
+      (u.email && u.email.toLowerCase() === email.toLowerCase()) ||
+      (u.employee_id && u.employee_id && u.employee_id.toLowerCase() === employee_id.toLowerCase())
+    );
+
+    if (duplicate) {
+      return res.status(400).json({ error: "Data registrasi gagal: NIK, Email, atau ID Karyawan sudah pernah digunakan." });
+    }
+
+    const newUserId = `USR-${Date.now()}`;
+    const newUser = {
+      id: newUserId,
+      nik: nik,
+      nama: nama,
+      role: role,
+      password_hash: hashSHA256(password),
+      offline_pin_hash: hashSHA256("147258"),
+      device_id: null,
+      status_aktif: "AKTIF" as const,
+      kantor_cabang: "PUSAT" as const,
+      cabang_id: "PUSAT",
+      employee_id: employee_id,
+      email: email
+    };
+
+    db.users.push(newUser);
+    writeDB(db);
+
+    res.json({
+      success: true,
+      message: "Akun karyawan Sekawan berhasil teregistrasi!",
+      user_data: {
+        id: newUser.id,
+        nik: newUser.nik,
+        nama: newUser.nama,
+        role: newUser.role,
+        cabang_id: newUser.cabang_id,
+        device_id: null,
+        email: newUser.email,
+        employee_id: newUser.employee_id
+      }
     });
   });
 

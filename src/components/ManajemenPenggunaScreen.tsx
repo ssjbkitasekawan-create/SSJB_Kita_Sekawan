@@ -77,6 +77,8 @@ export default function ManajemenPenggunaScreen({
   const [formStatus, setFormStatus] = useState<'AKTIF' | 'NON_AKTIF'>('AKTIF');
   const [formPassword, setFormPassword] = useState('');
   const [formCabang, setFormCabang] = useState<'PUSAT' | 'KC_MATIM'>('PUSAT');
+  const [formEmail, setFormEmail] = useState('');
+  const [formEmployeeId, setFormEmployeeId] = useState('');
 
   // Editing User State
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -118,7 +120,7 @@ export default function ManajemenPenggunaScreen({
   const handleAddUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formNama || !formUsername) {
-      triggerError('Harap lengkapi field Nama dan Username.');
+      triggerError('Harap lengkapi field Nama dan Username/NIK.');
       return;
     }
 
@@ -139,7 +141,9 @@ export default function ManajemenPenggunaScreen({
           password: formPassword || 'petugas123',
           role: formRole,
           status_aktif: formStatus,
-          kantor_cabang: userCabang === 'ALL' ? 'PUSAT' : userCabang
+          kantor_cabang: userCabang === 'ALL' ? 'PUSAT' : userCabang,
+          employee_id: formEmployeeId || `EMP-${Date.now().toString().slice(-4)}`,
+          email: formEmail
         })
       });
 
@@ -152,6 +156,8 @@ export default function ManajemenPenggunaScreen({
         setFormPassword('');
         setFormRole('petugas');
         setFormStatus('AKTIF');
+        setFormEmail('');
+        setFormEmployeeId('');
         fetchUsers();
         onRefreshParent();
       } else {
@@ -368,8 +374,32 @@ export default function ManajemenPenggunaScreen({
             </div>
 
             <form onSubmit={handleAddUserSubmit} className="space-y-4" id="form_add_user">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">ID Karyawan / Employee ID</label>
+                  <input 
+                    type="text" 
+                    className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:outline-purple-500 bg-slate-50 font-mono font-bold"
+                    placeholder="Contoh: EMP-0012"
+                    value={formEmployeeId}
+                    onChange={e => setFormEmployeeId(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Email Aktif Karyawan</label>
+                  <input 
+                    type="email" 
+                    className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:outline-purple-500 bg-slate-50"
+                    placeholder="Contoh: rudi@gmail.com"
+                    value={formEmail}
+                    onChange={e => setFormEmail(e.target.value)}
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Nama Lengkap Petugas</label>
+                <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Nama Lengkap Karyawan</label>
                 <input 
                   type="text" 
                   className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:outline-purple-500 bg-slate-50"
@@ -381,7 +411,7 @@ export default function ManajemenPenggunaScreen({
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Username / NIK Login</label>
+                <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Identitas Username / NIK Login</label>
                 <input 
                   type="text" 
                   className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:outline-purple-500 bg-slate-50"
@@ -390,7 +420,7 @@ export default function ManajemenPenggunaScreen({
                   onChange={e => setFormUsername(e.target.value)}
                   required
                 />
-                <span className="text-[10px] text-slate-450 mt-1 block">Username ini digunakan untuk login di Mobile maupun Web.</span>
+                <span className="text-[10px] text-slate-450 mt-1 block">NIK atau Username ini digunakan untuk login di Sekawan Karyawan Mobile/Web.</span>
               </div>
 
               <div>
@@ -486,21 +516,24 @@ export default function ManajemenPenggunaScreen({
                 <table className="w-full text-[11.5px] text-left">
                   <thead className="bg-slate-100 text-slate-600 uppercase text-[9px] font-mono border-b border-slate-200">
                     <tr>
-                      <th className="p-3">Nama Pengguna</th>
-                      <th className="p-3">NIK / Username</th>
-                      <th className="p-3">Role Otorisasi</th>
+                      <th className="p-3">ID & Nama Karyawan</th>
+                      <th className="p-3">Identitas (NIK & Email)</th>
+                      <th className="p-3">Jabatan / Role</th>
                       <th className="p-3 text-center">Status</th>
                       <th className="p-3 text-right">Tindakan Keamanan</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {users.map(u => {
-                      const isSuperUser = u.id === 'SUPER_ADMIN';
+                      const isSuperUser = u.id === 'SUPER_ADMIN' || u.id === 'USR-OWNER';
                       return (
                         <tr key={u.id} className="hover:bg-slate-50 transition">
-                          <td className="p-3 font-semibold text-slate-800">
-                            <div className="flex items-center gap-2">
-                              {isSuperUser ? <Lock size={12} className="text-purple-600 inline shrink-0" /> : null}
+                          <td className="p-3">
+                            <div className="font-mono text-[10px] font-bold text-slate-400">
+                              {u.employee_id || `EMP-${u.id.substring(u.id.length - 4)}`}
+                            </div>
+                            <div className="font-semibold text-slate-800 flex items-center gap-2 mt-0.5">
+                              {isSuperUser ? <Lock size={12} className="text-[#0A6EBD] inline shrink-0" /> : null}
                               <span>{u.nama}</span>
                             </div>
                             {selectedBranch === 'ALL' && (
@@ -517,7 +550,14 @@ export default function ManajemenPenggunaScreen({
                               </div>
                             )}
                           </td>
-                          <td className="p-3 font-mono text-slate-500">{u.nik}</td>
+                          <td className="p-3">
+                            <div className="font-mono text-slate-700 font-bold text-xs">{u.nik}</div>
+                            {u.email && (
+                              <div className="text-slate-450 hover:text-slate-800 text-[10.5px] transition flex items-center gap-1 mt-0.5">
+                                📩 {u.email}
+                              </div>
+                            )}
+                          </td>
                           <td className="p-3">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                               u.role === 'super_admin' ? 'bg-purple-100 text-purple-800' :
