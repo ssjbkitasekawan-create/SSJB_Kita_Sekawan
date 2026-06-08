@@ -1,0 +1,6 @@
+{
+  "name": "SSJB SEKAWAN SISTEM",
+  "description": "Sistem ERP dan Loan Origination System (LOS) Pembiayaan Mikro Offline-First lengkap dengan standar akuntansi SAK (Double-Entry), State Machine, dan RBAC.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

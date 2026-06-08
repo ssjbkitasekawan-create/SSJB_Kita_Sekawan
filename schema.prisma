@@ -1,0 +1,296 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum KantorCabang {
+  PUSAT
+  KC_MATIM
+}
+
+enum LegacyStatus {
+  AKTIF
+  SELESAI
+}
+
+model RawCustomer {
+  id                  String       @id @default(uuid())
+  nama_pemohon        String
+  nama_kelompok       String?
+  tanggal_pencairan   DateTime?
+  tanggal_jatuh_tempo DateTime?
+  panggilan           String?
+  tanggal_lahir       DateTime?
+  alamat              String?      @db.Text
+  petani              String?      // Parameter pekerjaan atau sektor usaha
+  no_hp               String?
+  jumlah_tanggungan   Int?         @default(0)
+  nik                 String?      // Jangan jadikan @unique di tahap staging ini karena data lama sering duplikat/kosong
+  nama_penjamin       String?
+  pekerjaan_penjamin  String?
+  hubungan            String?      // Hubungan penjamin dengan pemohon
+  no_hp_penjamin      String?
+  tahap               Int?         @default(1)
+  pokok_pinjaman      Decimal?     @default(0) @db.Decimal(12, 2)
+  tempo_mg            Int?         @default(0)  // Tenor dalam minggu
+  target              Decimal?     @default(0) @db.Decimal(12, 2) // Tagihan per minggu
+  jumlah              Decimal?     @default(0) @db.Decimal(12, 2) // Total pinjaman + jasa
+  deposito            Decimal?     @default(0) @db.Decimal(12, 2)
+  status              LegacyStatus @default(AKTIF)
+  kantor_cabang       KantorCabang @default(PUSAT)
+
+  @@index([nik])
+  @@index([nama_pemohon])
+  @@index([nama_kelompok])
+  @@map("raw_customers")
+}
+
+enum BerkasStatus {
+  DRAFT
+  PENDING_SPV
+  PENDING_ADM
+  APPROVED_FOR_SURVEY
+  REJECTED
+}
+
+model BerkasMasuk {
+  id                    String       @id @default(uuid()) @db.Uuid
+  id_kelompok           String       @db.Uuid
+  nama_kelompok         String
+  wilayah               String
+  nama_pemohon          String
+  nik_pemohon           String       @unique
+  tahap_pinjaman        Int
+  pengajuan_pinjaman    Decimal      @db.Decimal(12, 2)
+  tenor_mg              Int
+  sisa_piutang          Decimal      @db.Decimal(12, 2)
+  no_telepon_pemohon    String
+  jenis_kelamin_pemohon String
+  agama                 String
+  nama_penjamin         String
+  nik_penjamin          String
+  jenis_kelamin_penjamin String
+  no_telepon_penjamin   String
+  hubungan              String
+  doc_ktp_pemohon       String?
+  doc_ktp_penjamin      String?
+  doc_kk                String?
+  status                BerkasStatus @default(DRAFT)
+  petugas_id            String       @db.Uuid
+  catatan               String?      @db.Text
+  created_at            DateTime     @default(now())
+  kantor_cabang         KantorCabang @default(PUSAT)
+  individualSurveys     IndividualSurveyRecord[]
+
+  @@index([nik_pemohon])
+  @@map("berkas_masuk")
+}
+
+enum KriteriaSurvei {
+  BAIK
+  CUKUP
+  KURANG
+}
+
+enum KeputusanOtomatis {
+  LAYAK
+  TIDAK_LAYAK
+}
+
+model GroupSurveyRecord {
+  id                                String            @id @default(uuid()) @db.Uuid
+  id_kelompok                       String            @db.Uuid
+  nama_kelompok                     String
+  wilayah                           String
+  tanggal_pertemuan                 DateTime          @default(now())
+  jumlah_anggota                    Int
+  jumlah_pokok_pinjaman_kelompok    Decimal           @db.Decimal(12, 2)
+  foto_kelompok                     String            // URL from Google Cloud Storage
+  petugas_id                        String            @db.Uuid
+  created_at                        DateTime          @default(now())
+  
+  // Parameter Penilaian
+  inisiatif_ketua                   KriteriaSurvei
+  jarak_domisili                    KriteriaSurvei    // BAIK = berdekatan, KURANG = terpencar
+  kelengkapan_dokumen_dasar         KriteriaSurvei
+  ketepatan_waktu                   KriteriaSurvei
+  pemahaman_tanggung_renteng        KriteriaSurvei
+  penentuan_ketua_kelompok          KriteriaSurvei
+  pengaruh_ketua                    KriteriaSurvei
+  saling_kenal_antar_anggota        KriteriaSurvei
+  tingkat_kehadiran                 KriteriaSurvei
+
+  total_skor                        Int
+  keputusan_otomatis                KeputusanOtomatis
+  kantor_cabang                     KantorCabang      @default(PUSAT)
+
+  @@map("group_surveys")
+}
+
+enum ApprovalStatus {
+  LAYAK_CAIR
+  TIDAK_LAYAK
+}
+
+enum DepositStatus {
+  HOLD
+  RELEASED
+}
+
+enum FeeType {
+  UANG_PANGKAL
+  ADMINISTRASI
+}
+
+model Deposit {
+  id                  String        @id @default(uuid()) @db.Uuid
+  loan_id             String        @db.Uuid
+  customer_id         String        @db.Uuid
+  nominal             Decimal       @db.Decimal(12, 2)
+  tanggal_potong      DateTime      @default(now())
+  tanggal_jatuh_tempo DateTime
+  status              DepositStatus @default(HOLD)
+  kantor_cabang       KantorCabang  @default(PUSAT)
+
+  @@map("deposits")
+}
+
+model FeeCollection {
+  id                  String        @id @default(uuid()) @db.Uuid
+  loan_id             String        @db.Uuid
+  customer_id         String        @db.Uuid
+  jenis_potongan      FeeType
+  nominal             Decimal       @db.Decimal(12, 2)
+  tanggal_potong      DateTime      @default(now())
+  kantor_cabang       KantorCabang  @default(PUSAT)
+
+  @@map("fee_collections")
+}
+
+model IndividualSurveyRecord {
+  id                       String         @id @default(uuid()) @db.Uuid
+  application_id           String         @db.Uuid
+  tanggal_survei           DateTime       @default(now())
+  jam_survei               String
+  pendapatan_usaha         Decimal        @db.Decimal(12, 2)
+  pengeluaran_rumah_tangga Decimal        @db.Decimal(12, 2)
+  tanggungan_koperasi_lain Decimal        @db.Decimal(12, 2)
+  nama_koperasi            String?        @db.Text
+  foto_jaminan             String         // URL GCS
+  foto_anggota             String         // URL GCS - foto bersama pemohon & penjamin
+  rekomendasi_petugas      String         @db.Text
+  kordinat_lokasi          String         // latitude/longitude
+  status_approval          ApprovalStatus
+  petugas_id               String         @db.Uuid
+  created_at               DateTime       @default(now())
+  kantor_cabang            KantorCabang   @default(PUSAT)
+
+  application              BerkasMasuk    @relation(fields: [application_id], references: [id], onDelete: Cascade)
+
+  @@map("individual_surveys")
+}
+
+enum StatusVerifikasi {
+  SESUAI
+  DIBATALKAN
+}
+
+model Disbursement {
+  id                                 String           @id @default(uuid()) @db.Uuid
+  id_kelompok                        String           @db.Uuid
+  nama_kelompok                      String
+  petugas_pencairan_id               String           @db.Uuid
+  petugas_penagihan_id               String           @db.Uuid
+  petugas_id                         String           @db.Uuid
+  created_at                         DateTime         @default(now())
+  hari_penagihan                     String           // Senin, Selasa, dst.
+  jumlah_anggota_cair                Int
+  total_pencairan_kotor              Decimal          @db.Decimal(12, 2)
+  potongan_sisa_piutang              Decimal          @db.Decimal(12, 2)
+  potongan_up                        Decimal          @db.Decimal(12, 2)
+  potongan_deposito                  Decimal          @db.Decimal(12, 2)
+  potongan_administrasi              Decimal          @db.Decimal(12, 2)
+  total_uang_dikembalikan_ke_kantor  Decimal          @db.Decimal(12, 2)
+  total_uang_kembali_ke_kantor       Decimal          @db.Decimal(12, 2)
+  foto_selfie_pencairan              String           // URL GCS
+  status_sosialisasi                 Boolean          @default(false)
+  status_verifikasi                  StatusVerifikasi @default(SESUAI)
+  tanggal_pencairan                  DateTime         @default(now())
+  kantor_cabang                      KantorCabang     @default(PUSAT)
+
+  @@map("disbursements")
+}
+
+model User {
+  id               String       @id @default(uuid())
+  nik              String       @unique
+  nama             String
+  role             String
+  password_hash    String
+  offline_pin_hash String
+  device_id        String?
+  kantor_cabang    KantorCabang @default(PUSAT)
+
+  @@map("users")
+}
+
+model Customer {
+  id            String       @id @default(uuid())
+  name          String
+  nik           String       @unique
+  alamat        String
+  pekerjaan     String
+  status        String
+  is_new_member Boolean      @default(true)
+  group_id      String?
+  kantor_cabang KantorCabang @default(PUSAT)
+
+  @@map("customers")
+}
+
+model Loan {
+  id            String       @id @default(uuid())
+  customer_id   String
+  plafon        Decimal      @db.Decimal(12, 2)
+  status        String
+  tanggal_cair  DateTime?
+  kantor_cabang KantorCabang @default(PUSAT)
+
+  @@map("loans")
+}
+
+model Group {
+  id                      String       @id @default(uuid())
+  name                    String
+  sistem_tanggung_renteng Boolean      @default(true)
+  survey_status           String       @default("NOT_SURVEYED")
+  survey_notes            String?
+  created_at              DateTime     @default(now())
+  kantor_cabang           KantorCabang @default(PUSAT)
+
+  @@map("groups")
+}
+
+model BillingSchedule {
+  id                  String       @id @default(uuid())
+  loan_id             String
+  customer_id         String
+  term                Int
+  tanggal_jatuh_tempo DateTime
+  pokok               Decimal      @db.Decimal(12, 2)
+  jasa                Decimal      @db.Decimal(12, 2)
+  total_tagihan       Decimal      @db.Decimal(12, 2)
+  bayar_pokok         Decimal      @default(0) @db.Decimal(12, 2)
+  bayar_jasa          Decimal      @default(0) @db.Decimal(12, 2)
+  status              String       @default("UNPAID")
+  kantor_cabang       KantorCabang @default(PUSAT)
+
+  @@map("billing_schedules")
+}
+
+
+

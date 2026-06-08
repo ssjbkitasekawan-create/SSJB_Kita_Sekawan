@@ -1,0 +1,184 @@
+{
+  "customers": [
+    {
+      "id": "C2026-001",
+      "name": "Siti Aminah",
+      "nik": "3201024508820001",
+      "alamat": "RT 03/RW 04, Desa Bojong Gede, Bogor",
+      "pekerjaan": "Warung Bakso Keliling",
+      "status": "APPROVED_FOR_SURVEY",
+      "is_new_member": true,
+      "group_id": "G-001"
+    },
+    {
+      "id": "C2026-002",
+      "name": "Suryani Kulsum",
+      "nik": "3201026112830002",
+      "alamat": "RT 01/RW 02, Kampung Baru, Megamendung",
+      "pekerjaan": "Pembuat Kue Basah",
+      "status": "APPROVED_FOR_SURVEY",
+      "is_new_member": true,
+      "group_id": "G-001"
+    },
+    {
+      "id": "C2026-003",
+      "name": "Rukmini Rahayu",
+      "nik": "3214055204850003",
+      "alamat": "RT 05/RW 11, Kelurahan Sukasari, Bandung",
+      "pekerjaan": "Usaha Menjahit & Konfeksi",
+      "status": "APPROVED_FOR_SURVEY",
+      "is_new_member": false,
+      "group_id": "G-001"
+    },
+    {
+      "id": "C2026-004",
+      "name": "Fatimah Azzahra",
+      "nik": "3205126805890004",
+      "alamat": "Kampung Cipancar RT 04/05, Garut",
+      "pekerjaan": "Produksi Tempe Rumahan",
+      "status": "PENDING_SPV",
+      "is_new_member": true,
+      "group_id": "G-002"
+    },
+    {
+      "id": "C2026-005",
+      "name": "Kusni Ningsih",
+      "nik": "3207034107810005",
+      "alamat": "Desa Pamulihan, Sumedang",
+      "pekerjaan": "Kerajinan Anyaman Bambu",
+      "status": "PENDING_SPV",
+      "is_new_member": false,
+      "group_id": "G-002"
+    },
+    {
+      "id": "C2026-006",
+      "name": "Anisa Hartati",
+      "nik": "3310125501900006",
+      "alamat": "Dusun Krajan Lor, Klaten",
+      "pekerjaan": "Pengepul & Penjual Sayur",
+      "status": "NOT_REGISTERED",
+      "is_new_member": true,
+      "group_id": null
+    }
+  ],
+  "groups": [
+    {
+      "id": "G-001",
+      "name": "Kelompok Melati",
+      "sistem_tanggung_renteng": true,
+      "survey_status": "NOT_SURVEYED",
+      "survey_notes": "",
+      "created_at": "2026-06-01T08:00:00Z"
+    },
+    {
+      "id": "G-002",
+      "name": "Kelompok Mawar",
+      "sistem_tanggung_renteng": false,
+      "survey_status": "NOT_SURVEYED",
+      "survey_notes": "",
+      "created_at": "2026-06-02T10:00:00Z"
+    }
+  ],
+  "regions": [],
+  "groupSurveys": [],
+  "individualSurveys": [],
+  "loans": [],
+  "billingSchedules": [],
+  "deposits": [],
+  "feeCollections": [],
+  "payments": [],
+  "journalEntries": [
+    {
+      "id": "JE-SEED-01",
+      "reference": "MODAL_AWAL",
+      "description": "Setoran Modal Disetor Pemilik (Kas Bank)",
+      "date": "2026-06-01T00:00:00Z"
+    }
+  ],
+  "journalEntryLines": [
+    {
+      "id": "JEL-SEED-01",
+      "entry_id": "JE-SEED-01",
+      "account_code": "1112",
+      "debit": 75000000,
+      "credit": 0
+    },
+    {
+      "id": "JEL-SEED-02",
+      "entry_id": "JE-SEED-01",
+      "account_code": "3100",
+      "debit": 0,
+      "credit": 75000000
+    }
+  ],
+  "rawCustomers": [],
+  "berkasMasuk": [],
+  "disbursements": [],
+  "jointLiabilities": [
+    {
+      "id": "JL-001",
+      "lender_id": "C2026-001",
+      "borrower_id": "C2026-002",
+      "nominal_utang": 250000,
+      "nominal_terbayar": 50000,
+      "status": "PARTIAL",
+      "created_at": "2026-06-02T10:00:00Z"
+    },
+    {
+      "id": "JL-002",
+      "lender_id": "C2026-003",
+      "borrower_id": "C2026-001",
+      "nominal_utang": 150000,
+      "nominal_terbayar": 0,
+      "status": "UNPAID",
+      "created_at": "2026-06-03T11:00:00Z"
+    },
+    {
+      "id": "JL-003",
+      "lender_id": "C2026-002",
+      "borrower_id": "C2026-003",
+      "nominal_utang": 300000,
+      "nominal_terbayar": 300000,
+      "status": "SETTLED",
+      "created_at": "2026-06-04T09:00:00Z"
+    }
+  ],
+  "liabilityPaymentHistories": [
+    {
+      "id": "LPH-SEED-01",
+      "liability_id": "JL-001",
+      "nominal_bayar": 50000,
+      "tanggal_bayar": "2026-06-03T14:00:00Z",
+      "petugas_id": "USR-01"
+    }
+  ],
+  "users": [
+    {
+      "id": "USR-01",
+      "nik": "123456",
+      "nama": "Budi Santoso (Petugas)",
+      "role": "petugas",
+      "password_hash": "2dad904f71aa0dcf6ea1addaa084a5865ffe448e4d3f900668e1cc7e7b6153d7",
+      "offline_pin_hash": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+      "device_id": "DEV-UUID-88981"
+    },
+    {
+      "id": "USR-02",
+      "nik": "sekawan01",
+      "nama": "Hendri Wijaya (Petugas Senior)",
+      "role": "petugas",
+      "password_hash": "7d8e7a7a1fa5aeb355b9d7158af9f8b9b09085188a73b3b6aa41a5b3c8603bf8",
+      "offline_pin_hash": "481f6cc0511143ccdd7e2d1b1b94faf0a700a8b49cd13922a70b5ae28acaa8c5",
+      "device_id": "DEV-UUID-ANOTHER-777"
+    },
+    {
+      "id": "USR-03",
+      "nik": "admin123",
+      "nama": "Siti Rahma (Admin)",
+      "role": "admin",
+      "password_hash": "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
+      "offline_pin_hash": "91b4d142823f7d20c5f08df69122de43f35f057a988d9619f6d3138485c9a203",
+      "device_id": null
+    }
+  ]
+}
