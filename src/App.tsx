@@ -346,7 +346,7 @@ export default function App() {
     timestamp: string;
     type: 'info' | 'success';
   }>>([]);
-  const [knownPaymentIds, setKnownPaymentIds] = useState<Set<string>>(new Set());
+  const [knownPaymentIds, setKnownPaymentIds] = useState<Set<string> | null>(null);
 
   const [activeTab, setActiveTab] = useState<'database_awal' | 'berkas' | 'survei' | 'pencairan' | 'database_aktif' | 'manajemen_penagihan' | 'penagihan' | 'setoran' | 'laporan' | 'auth_simulator' | 'tanggung_renteng' | 'onboarding_legacy' | 'tracking_up' | 'tracking_deposito' | 'tracking_administrasi' | 'manajemen_pengguna'>('database_awal');
 
@@ -1078,10 +1078,11 @@ export default function App() {
     if (activeTab !== 'setoran' || !state) return;
 
     // Initialize knownPaymentIds on first load of Setoran tab
-    if (knownPaymentIds.size === 0) {
+    if (knownPaymentIds === null) {
       const initialIds = new Set<string>();
       state.payments.forEach(p => initialIds.add(p.id));
       setKnownPaymentIds(initialIds);
+      return;
     }
 
     const interval = setInterval(async () => {
@@ -2196,12 +2197,22 @@ export default function App() {
           
           {/* Current Role Card Status */}
           <div className="bg-slate-900 text-white rounded-xl p-4 shadow-sm border border-slate-800" id="current_role_card">
-            <span className="text-[11px] font-mono uppercase text-slate-400 tracking-widest block mb-1">Akun Simulasi</span>
-            <div className="font-bold font-display text-lg text-emerald-400 flex items-center gap-2">
-              {activeRole === 'petugas' && 'Petugas (Mobile)'}
-              {activeRole === 'spv' && 'Supervisor (SPV)'}
-              {activeRole === 'admin' && 'Administrator'}
-              {activeRole === 'kasir' && 'Kasir Harian'}
+            <span className="text-[11px] font-mono uppercase text-slate-400 tracking-widest block mb-1">
+              {currentUser ? 'Sesi Pengguna' : 'Akun Simulasi'}
+            </span>
+            <div className="font-bold font-display text-lg text-emerald-400 flex flex-col gap-0.5 animate-fadeIn">
+              {currentUser && (
+                <span className="text-sm font-semibold text-white truncate block">
+                  {currentUser.nama}
+                </span>
+              )}
+              <span className="text-xs text-emerald-400 font-bold block">
+                {activeRole === 'petugas' && 'Petugas (Mobile)'}
+                {activeRole === 'spv' && 'Supervisor (SPV)'}
+                {activeRole === 'admin' && 'Administrator'}
+                {activeRole === 'kasir' && 'Kasir Harian'}
+                {activeRole === 'super_admin' && 'Super Admin'}
+              </span>
             </div>
             <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
               {roles.find(r => r.id === activeRole)?.desc}
@@ -4593,64 +4604,67 @@ export default function App() {
                           </div>
                         )}
                         
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="text-[10.5px] bg-slate-50 border py-1.5 px-3 rounded-xl flex items-center gap-1.5 shadow-2xs">
-                            <span className="font-bold text-slate-500 uppercase tracking-wide">ROLE SIMULATION:</span>
-                            <button 
-                              type="button"
-                              onClick={() => setActiveRole('petugas')}
-                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase transition ${activeRole === 'petugas' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
-                            >
-                              PETUGAS (Mobile)
-                            </button>
-                            <button 
-                              type="button"
-                              onClick={() => setActiveRole('spv')}
-                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase transition ${activeRole === 'spv' ? 'bg-amber-600 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
-                            >
-                              SPV (Web)
-                            </button>
-                            <button 
-                              type="button"
-                              onClick={() => setActiveRole('admin')}
-                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase transition ${activeRole === 'admin' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
-                            >
-                              ADMIN (Web)
-                            </button>
-                            <button 
-                              type="button"
-                              onClick={() => setActiveRole('kasir')}
-                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase transition ${activeRole === 'kasir' ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
-                            >
-                              KASIR (Web)
-                            </button>
-                            <button 
-                              type="button"
-                              onClick={() => setActiveRole('super_admin')}
-                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase transition ${activeRole === 'super_admin' ? 'bg-purple-600 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
-                            >
-                              SUPER ADMIN
-                            </button>
-                          </div>
+                        {/* Role simulation is disabled/empty for logged in users as requested */}
+                        {false && (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-[10.5px] bg-slate-50 border py-1.5 px-3 rounded-xl flex items-center gap-1.5 shadow-2xs">
+                              <span className="font-bold text-slate-500 uppercase tracking-wide">ROLE SIMULATION:</span>
+                              <button 
+                                type="button"
+                                onClick={() => setActiveRole('petugas')}
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase transition ${activeRole === 'petugas' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
+                              >
+                                PETUGAS (Mobile)
+                              </button>
+                              <button 
+                                type="button"
+                                onClick={() => setActiveRole('spv')}
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase transition ${activeRole === 'spv' ? 'bg-amber-600 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
+                              >
+                                SPV (Web)
+                              </button>
+                              <button 
+                                type="button"
+                                onClick={() => setActiveRole('admin')}
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase transition ${activeRole === 'admin' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
+                              >
+                                ADMIN (Web)
+                              </button>
+                              <button 
+                                type="button"
+                                onClick={() => setActiveRole('kasir')}
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase transition ${activeRole === 'kasir' ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
+                              >
+                                KASIR (Web)
+                              </button>
+                              <button 
+                                type="button"
+                                onClick={() => setActiveRole('super_admin')}
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase transition ${activeRole === 'super_admin' ? 'bg-purple-600 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
+                              >
+                                SUPER ADMIN
+                              </button>
+                            </div>
 
-                          <div className="text-[10.5px] bg-slate-50 border py-1.5 px-3 rounded-xl flex items-center gap-1.5 shadow-2xs">
-                            <span className="font-bold text-slate-500 uppercase tracking-wide">CABANG SIMULATION:</span>
-                            <button 
-                              type="button"
-                              onClick={() => setActiveBranch('PUSAT')}
-                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase transition ${activeBranch === 'PUSAT' ? 'bg-slate-800 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
-                            >
-                              🏢 PUSAT
-                            </button>
-                            <button 
-                              type="button"
-                              onClick={() => setActiveBranch('KC_MATIM')}
-                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase transition ${activeBranch === 'KC_MATIM' ? 'bg-rose-600 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
-                            >
-                              📍 KC MATIM
-                            </button>
+                            <div className="text-[10.5px] bg-slate-50 border py-1.5 px-3 rounded-xl flex items-center gap-1.5 shadow-2xs">
+                              <span className="font-bold text-slate-500 uppercase tracking-wide">CABANG SIMULATION:</span>
+                              <button 
+                                type="button"
+                                onClick={() => setActiveBranch('PUSAT')}
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase transition ${activeBranch === 'PUSAT' ? 'bg-slate-800 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
+                              >
+                                🏢 PUSAT
+                              </button>
+                              <button 
+                                type="button"
+                                onClick={() => setActiveBranch('KC_MATIM')}
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase transition ${activeBranch === 'KC_MATIM' ? 'bg-rose-600 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
+                              >
+                                📍 KC MATIM
+                              </button>
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
 
                       {/* Reject Form Modal Overlay (if active) */}
